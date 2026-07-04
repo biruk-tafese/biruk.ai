@@ -1,1 +1,23 @@
-{"theme_color":"#8936FF","background_color":"#2EC6FE","icons":[{"purpose":"maskable","sizes":"512x512","src":"icon512_maskable.png","type":"image/png"},{"purpose":"any","sizes":"512x512","src":"icon512_rounded.png","type":"image/png"}],"orientation":"any","display":"standalone","dir":"auto","lang":"en-US","name":"Biruk.ai","short_name":"biruk.ai"}
+{
+  "name": "Biruk.ai Document Intelligence Workspace",
+  "short_name": "Biruk.ai",
+  "description": "Intelligent multi-document workspace with local WebGPU offline support.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#080c14",
+  "theme_color": "#080c14",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon512_maskable.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon512_rounded.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

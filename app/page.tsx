@@ -7,6 +7,13 @@ import { ChatHeader } from "./components/ChatHeader";
 import { MessageList } from "./components/MessageList";
 import { ChatInput } from "./components/ChatInput";
 import { ChatSession, Message, ExecutionMode, WorkspaceFile } from "./types/rag";
+import localforage from "localforage";
+
+// Initialize client-side persistent storage container
+localforage.config({
+  name: "biruk-ai-workspace",
+  storeName: "session_matrix_cache"
+});
 
 export default function Home() {
   const { initEngine, indexTextData, queryLocalVectorDB, engine, status } = useLocalRAG();
@@ -37,6 +44,31 @@ export default function Home() {
 
   const currentSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
 
+  // Hydrate workspace data layers from IndexedDB on startup
+  useEffect(() => {
+    const hydrateLocalCache = async () => {
+      try {
+        const savedSessions = await localforage.getItem<ChatSession[]>("sessions");
+        if (savedSessions && savedSessions.length > 0) {
+          setSessions(savedSessions);
+          
+          // Detect active state layout configurations
+          const active = savedSessions.find(s => s.id === activeSessionId);
+          if (active) {
+            setGlobalMode(active.executionMode);
+            if (active.files.length > 0) {
+              const pooledCorpus = active.files.map(f => f.content).join("\n\n");
+              await indexTextData(pooledCorpus);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("IndexedDB client hydration exception:", err);
+      }
+    };
+    hydrateLocalCache();
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentSession?.messages]);
@@ -53,12 +85,17 @@ export default function Home() {
   };
 
   const updateActiveSessionData = (newMessages: Message[], dynamicFiles: WorkspaceFile[]): void => {
-    setSessions(prev => prev.map((s) => {
-      if (s.id === activeSessionId) {
-        return { ...s, messages: newMessages, files: dynamicFiles };
-      }
-      return s;
-    }));
+    setSessions(prev => {
+      const updated = prev.map((s) => {
+        if (s.id === activeSessionId) {
+          return { ...s, messages: newMessages, files: dynamicFiles };
+        }
+        return s;
+      });
+      // Stream runtime snapshot down into non-volatile device storage safely
+      localforage.setItem("sessions", updated).catch(console.error);
+      return updated;
+    });
   };
 
   const handleCreateNewSession = (): void => {
@@ -104,7 +141,8 @@ export default function Home() {
     const structuredPrompt = vectorContextResult 
       ? `[WORKSPACE CONTEXT MATRIX]\n${vectorContextResult}\n[END CONTEXT]\n\nQuery: ${lastUserMessage.content}`
       : lastUserMessage.content;
-const systemPrompt = `You are Biruk.ai, a specialized document intelligence and interactive learning assistant. Your core identity is to help users break down, analyze, and query their uploaded knowledge bases.
+
+    const systemPrompt = `You are Biruk.ai, a specialized document intelligence and interactive learning assistant. Your core identity is to help users break down, analyze, and query their uploaded knowledge bases.
 
 CRITICAL RESPONSE RULES:
 1. NEVER mention backend structural terms like "[WORKSPACE CONTEXT MATRIX]", "[DOCUMENT CONTEXT]", or "[END CONTEXT]" under any circumstances.
@@ -183,63 +221,58 @@ A custom document is loaded. Review the text provided inside the context boundar
     updateActiveSessionData(trimmedHistoryTree, currentSession.files);
   };
 
-  // Multiple File Processing Engine Hook (Handles Insertions, Removals, and Dynamic Replacements)
   // Multiple File Processing Engine Hook (Completely Silent Chat Stream)
-const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>, replaceFileId?: string): Promise<void> => {
-  const file = e.target.files?.[0];
-  if (!file) return;
+  const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>, replaceFileId?: string): Promise<void> => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-  setFileError(null);
-  setIsProcessingFile(true);
-  const reader = new FileReader();
-  
-  reader.onload = async function (this: FileReader) {
-    try {
-      const pdfjs = await import("pdfjs-dist");
-      pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
+    setFileError(null);
+    setIsProcessingFile(true);
+    const reader = new FileReader();
+    
+    reader.onload = async function (this: FileReader) {
+      try {
+        const pdfjs = await import("pdfjs-dist");
+        pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/build/pdf.worker.mjs", import.meta.url).toString();
 
-      const typedArray = new Uint8Array(this.result as ArrayBuffer);
-      const pdf = await pdfjs.getDocument({ data: typedArray }).promise;
-      let extractedText = "";
-      
-      for (let i = 1; i <= pdf.numPages; i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        extractedText += content.items.map((item: any) => ("str" in item ? item.str : "")).join(" ") + "\n";
+        const typedArray = new Uint8Array(this.result as ArrayBuffer);
+        const pdf = await pdfjs.getDocument({ data: typedArray }).promise;
+        let extractedText = "";
+        
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          extractedText += content.items.map((item: any) => ("str" in item ? item.str : "")).join(" ") + "\n";
+        }
+        
+        let targetFilesMap = [...currentSession.files];
+
+        if (replaceFileId) {
+          targetFilesMap = targetFilesMap.map(f => f.id === replaceFileId ? { ...f, name: file.name, content: extractedText } : f);
+        } else {
+          targetFilesMap.push({ id: `file-${Date.now()}`, name: file.name, content: extractedText });
+        }
+
+        await recompileWorkspaceVectorContext(targetFilesMap);
+
+        // Silent interface refresh injection
+        updateActiveSessionData(currentSession.messages, targetFilesMap);
+      } catch (err) {
+        setFileError("File array structure compile error.");
+      } finally {
+        setIsProcessingFile(false);
       }
-      
-      let targetFilesMap = [...currentSession.files];
-
-      if (replaceFileId) {
-        // Replace targeted context node
-        targetFilesMap = targetFilesMap.map(f => f.id === replaceFileId ? { ...f, name: file.name, content: extractedText } : f);
-      } else {
-        // Push brand new item asset node
-        targetFilesMap.push({ id: `file-${Date.now()}`, name: file.name, content: extractedText });
-      }
-
-      await recompileWorkspaceVectorContext(targetFilesMap);
-
-      // Keep messages exactly the same, only update the files array
-      updateActiveSessionData(currentSession.messages, targetFilesMap);
-    } catch (err) {
-      setFileError("File array structure compile error.");
-    } finally {
-      setIsProcessingFile(false);
-    }
+    };
+    reader.readAsArrayBuffer(file);
   };
-  reader.readAsArrayBuffer(file);
-};
 
+  // Updated: Completely Silent File Removal Interface Hook
   const handleRemoveFile = async (fileId: string) => {
     const remainingFiles = currentSession.files.filter(f => f.id !== fileId);
     await recompileWorkspaceVectorContext(remainingFiles);
 
-    const updateNotice: Message[] = [
-      ...currentSession.messages,
-      { id: `msg-${Date.now()}`, role: "assistant", content: `🗑️ **Context vector node item dropped from active session scope.**` }
-    ];
-    updateActiveSessionData(updateNotice, remainingFiles);
+    // Kept 100% silent by routing currentSession.messages directly
+    updateActiveSessionData(currentSession.messages, remainingFiles);
   };
 
   return (
@@ -261,40 +294,43 @@ const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>, replaceFileId?
         onCreateSession={handleCreateNewSession}
       />
 
-      {/* Change relative to a strict flex-col viewport container */}
-<div className="flex-1 md:ml-72 flex flex-col h-screen overflow-hidden bg-gradient-to-b from-[#080c14] to-[#05080e]">
-  <ChatHeader 
-    executionMode={currentSession.executionMode}
-    onModeChange={(mode) => {
-      setGlobalMode(mode);
-      setSessions(prev => prev.map((s) => s.id === activeSessionId ? { ...s, executionMode: mode } : s));
-    }}
-    engineReady={!!engine}
-    status={status}
-    initEngine={initEngine}
-    onMenuClick={() => setSidebarOpen(true)}
-  />
+      <div className="flex-1 md:ml-72 flex flex-col h-screen overflow-hidden bg-gradient-to-b from-[#080c14] to-[#05080e]">
+        <ChatHeader 
+          executionMode={currentSession.executionMode}
+          onModeChange={(mode) => {
+            setGlobalMode(mode);
+            setSessions(prev => {
+              const updated = prev.map((s) => s.id === activeSessionId ? { ...s, executionMode: mode } : s);
+              localforage.setItem("sessions", updated).catch(console.error);
+              return updated;
+            });
+          }}
+          engineReady={!!engine}
+          status={status}
+          initEngine={initEngine}
+          onMenuClick={() => setSidebarOpen(true)}
+        />
 
-  <MessageList 
-    messages={currentSession.messages}
-    isProcessingFile={isProcessingFile}
-    isCloudLoading={isCloudLoading}
-    fileError={fileError}
-    messagesEndRef={messagesEndRef}
-    onEditMessage={handleEditMessage}
-    onDeleteMessage={handleDeleteMessage}
-  />
+        <MessageList 
+          messages={currentSession.messages}
+          isProcessingFile={isProcessingFile}
+          isCloudLoading={isCloudLoading}
+          fileError={fileError}
+          messagesEndRef={messagesEndRef}
+          onEditMessage={handleEditMessage}
+          onDeleteMessage={handleDeleteMessage}
+        />
 
-  <ChatInput 
-    input={input}
-    onInputChange={setInput}
-    onSendMessage={handleSendMessage}
-    onFileUpload={handleFileUpload}
-    onRemoveFile={handleRemoveFile}
-    uploadedFiles={currentSession.files}
-    executionMode={currentSession.executionMode}
-  />
-</div>
+        <ChatInput 
+          input={input}
+          onInputChange={setInput}
+          onSendMessage={handleSendMessage}
+          onFileUpload={handleFileUpload}
+          onRemoveFile={handleRemoveFile}
+          uploadedFiles={currentSession.files}
+          executionMode={currentSession.executionMode}
+        />
+      </div>
     </div>
   );
 }

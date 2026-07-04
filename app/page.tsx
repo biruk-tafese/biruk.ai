@@ -261,39 +261,40 @@ const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>, replaceFileId?
         onCreateSession={handleCreateNewSession}
       />
 
-      <div className="flex-1 md:ml-72 flex flex-col h-screen relative bg-linear-to-b from-[#080c14] to-[#05080e]">
-        <ChatHeader 
-          executionMode={currentSession.executionMode}
-          onModeChange={(mode) => {
-            setGlobalMode(mode);
-            setSessions(prev => prev.map((s) => s.id === activeSessionId ? { ...s, executionMode: mode } : s));
-          }}
-          engineReady={!!engine}
-          status={status}
-          initEngine={initEngine}
-          onMenuClick={() => setSidebarOpen(true)}
-        />
+      {/* Change relative to a strict flex-col viewport container */}
+<div className="flex-1 md:ml-72 flex flex-col h-screen overflow-hidden bg-gradient-to-b from-[#080c14] to-[#05080e]">
+  <ChatHeader 
+    executionMode={currentSession.executionMode}
+    onModeChange={(mode) => {
+      setGlobalMode(mode);
+      setSessions(prev => prev.map((s) => s.id === activeSessionId ? { ...s, executionMode: mode } : s));
+    }}
+    engineReady={!!engine}
+    status={status}
+    initEngine={initEngine}
+    onMenuClick={() => setSidebarOpen(true)}
+  />
 
-        <MessageList 
-          messages={currentSession.messages}
-          isProcessingFile={isProcessingFile}
-          isCloudLoading={isCloudLoading}
-          fileError={fileError}
-          messagesEndRef={messagesEndRef}
-          onEditMessage={handleEditMessage}
-          onDeleteMessage={handleDeleteMessage}
-        />
+  <MessageList 
+    messages={currentSession.messages}
+    isProcessingFile={isProcessingFile}
+    isCloudLoading={isCloudLoading}
+    fileError={fileError}
+    messagesEndRef={messagesEndRef}
+    onEditMessage={handleEditMessage}
+    onDeleteMessage={handleDeleteMessage}
+  />
 
-        <ChatInput 
-          input={input}
-          onInputChange={setInput}
-          onSendMessage={handleSendMessage}
-          onFileUpload={handleFileUpload}
-          onRemoveFile={handleRemoveFile}
-          uploadedFiles={currentSession.files}
-          executionMode={currentSession.executionMode}
-        />
-      </div>
+  <ChatInput 
+    input={input}
+    onInputChange={setInput}
+    onSendMessage={handleSendMessage}
+    onFileUpload={handleFileUpload}
+    onRemoveFile={handleRemoveFile}
+    uploadedFiles={currentSession.files}
+    executionMode={currentSession.executionMode}
+  />
+</div>
     </div>
   );
 }

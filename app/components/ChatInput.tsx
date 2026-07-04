@@ -33,11 +33,12 @@ export function ChatInput({
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     onFileUpload(e, replaceTargetRef.current);
-    if (fileInputRef.current) fileInputRef.current.value = ""; // Reset form DOM node
+    if (fileInputRef.current) fileInputRef.current.value = ""; 
   };
 
   return (
-    <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-[#05080e] via-[#05080e]/95 to-transparent backdrop-blur-sm max-w-3xl w-full mx-auto space-y-3">
+    /* 👇 FIXED POSITIONING: Removed absolute overlay layouts */
+    <div className="w-full max-w-3xl mx-auto px-4 pt-2 pb-6 md:pb-8 bg-[#05080e] border-t border-slate-900/40 space-y-3 shrink-0">
       
       {/* Dynamic Hover-Managed File Tray Deck */}
       {uploadedFiles.length > 0 && (
@@ -50,7 +51,6 @@ export function ChatInput({
               <FileText className="h-3.5 w-3.5 text-amber-500 shrink-0" />
               <span className="truncate pr-1">{file.name}</span>
               
-              {/* Context Action Overlay Tray on Hover/Focus */}
               <div className="absolute inset-0 bg-slate-950/90 rounded-xl flex items-center justify-end px-2 gap-2 opacity-0 group-hover:opacity-100 transition-all duration-150">
                 <button
                   type="button"
@@ -102,7 +102,7 @@ export function ChatInput({
               onSendMessage();
             }
           }}
-          placeholder={`Query workspace repository matrix (${executionMode} mode)...`}
+          placeholder={`Query workspace (${executionMode} mode)...`}
           rows={1}
           className="flex-1 bg-transparent text-slate-200 placeholder-slate-500 text-sm focus:outline-none resize-none max-h-32 min-h-[38px] py-2 px-1 scrollbar-none font-sans"
         />
@@ -111,7 +111,7 @@ export function ChatInput({
           type="button"
           onClick={onSendMessage}
           disabled={!input.trim()}
-          className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 rounded-xl transition font-bold shadow-md hover:brightness-110 shrink-0"
+          className="p-2.5 bg-linear-to-br from-amber-500 to-orange-600 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-600 text-slate-950 rounded-xl transition font-bold shadow-md hover:brightness-110 shrink-0"
         >
           <Send className="h-4 w-4" />
         </button>

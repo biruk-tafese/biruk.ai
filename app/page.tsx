@@ -9,7 +9,6 @@ import { ChatInput } from "./components/ChatInput";
 import { ChatSession, Message, ExecutionMode, WorkspaceFile } from "./types/rag";
 import localforage from "localforage";
 
-// Initialize client-side persistent storage container
 localforage.config({
   name: "biruk-ai-workspace",
   storeName: "session_matrix_cache"
@@ -44,7 +43,24 @@ export default function Home() {
 
   const currentSession = sessions.find(s => s.id === activeSessionId) || sessions[0];
 
-  // Hydrate workspace data layers from IndexedDB on startup
+  // Dynamic initialization logic: updates welcome message based on files & engine status
+  useEffect(() => {
+    if (currentSession.messages.length === 1 && currentSession.messages[0].id === "msg-init") {
+      let greetMessage = "Hello! I am **Biruk.ai**. Clip multi-document PDFs onto the repository tray below, and I will index their unified matrices for processing!";
+      
+      if (currentSession.files.length > 0) {
+        greetMessage = `Welcome back! I see **${currentSession.files.length} document(s)** loaded in the workspace. Ask me anything directly about their contents!`;
+      } else if (engine) {
+        greetMessage = "Hello! The offline WebGPU execution engine is fully active and initialized. Drop your source PDFs into the tray below so I can analyze their data matrix locally!";
+      }
+
+      setSessions(prev => prev.map(s => s.id === activeSessionId ? {
+        ...s,
+        messages: [{ ...s.messages[0], content: greetMessage }]
+      } : s));
+    }
+  }, [engine, currentSession.files.length, activeSessionId]);
+
   useEffect(() => {
     const hydrateLocalCache = async () => {
       try {
@@ -52,7 +68,6 @@ export default function Home() {
         if (savedSessions && savedSessions.length > 0) {
           setSessions(savedSessions);
           
-          // Detect active state layout configurations
           const active = savedSessions.find(s => s.id === activeSessionId);
           if (active) {
             setGlobalMode(active.executionMode);
@@ -73,7 +88,6 @@ export default function Home() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [currentSession?.messages]);
 
-  // Sync state index changes across active knowledge domains
   const recompileWorkspaceVectorContext = async (targetFiles: WorkspaceFile[]) => {
     if (targetFiles.length === 0) return;
     const pooledCorpus = targetFiles.map(f => f.content).join("\n\n");
@@ -92,7 +106,6 @@ export default function Home() {
         }
         return s;
       });
-      // Stream runtime snapshot down into non-volatile device storage safely
       localforage.setItem("sessions", updated).catch(console.error);
       return updated;
     });
@@ -105,6 +118,10 @@ export default function Home() {
     }
 
     const newId = `session-${Date.now()}`;
+    const initialText = engine 
+      ? "Offline engine ready. Drop your target PDFs down here to analyze context blocks locally."
+      : "Workspace units active. Clip your PDFs onto the tray stack below.";
+
     const newSession: ChatSession = {
       id: newId,
       title: `Workspace Unit`,
@@ -112,7 +129,7 @@ export default function Home() {
         { 
           id: `msg-${Date.now()}`,
           role: "assistant", 
-          content: `Workspace ready. Upload PDFs right into the tray stack.` 
+          content: initialText
         }
       ],
       executionMode: globalMode,
@@ -133,7 +150,6 @@ export default function Home() {
       try {
         vectorContextResult = await queryLocalVectorDB(lastUserMessage.content);
       } catch (e) {
-        // Fallback: pool standard chunk bounds
         vectorContextResult = workingFiles.map(f => f.content).join("\n").slice(0, 3500);
       }
     }
@@ -142,6 +158,7 @@ export default function Home() {
       ? `[WORKSPACE CONTEXT MATRIX]\n${vectorContextResult}\n[END CONTEXT]\n\nQuery: ${lastUserMessage.content}`
       : lastUserMessage.content;
 
+    // Enhanced Context Instruction Prompt Routing
     const systemPrompt = `You are Biruk.ai, a specialized document intelligence and interactive learning assistant. Your core identity is to help users break down, analyze, and query their uploaded knowledge bases.
 
 CRITICAL RESPONSE RULES:
@@ -152,10 +169,8 @@ CRITICAL RESPONSE RULES:
 
 ${vectorContextResult ? `
 CRITICAL RETRIEVAL INSTRUCTION:
-A custom document is loaded. Review the text provided inside the context boundaries carefully.
-- Prioritize facts and answers explicitly located within the context blocks to answer the user's question accurately.
-- If the context does not contain sufficient details, weave in your general knowledge, but explicitly state that the details weren't found in their uploaded file.
-` : "Greet the user with warm professionalism as Biruk.ai and invite them to start a conversation or drop a PDF to begin deep analysis."}`;
+Review the context text blocks provided above. Synthesize your answers directly and exclusively using facts found within these document chunks. Do not assume or hallucinate features outside of the provided material. If details are missing, address the question natively while noting it wasn't specified in the file.
+` : "Invite the user with concise warmth to drop a PDF matrix or begin direct technical querying."}`;
 
     const processedHistory = historyTrack.map(m => m.id === lastUserMessage.id ? { ...m, content: structuredPrompt } : m);
     const chatMessages = [{ role: "system", content: systemPrompt }, ...processedHistory.slice(-6)];
@@ -221,7 +236,6 @@ A custom document is loaded. Review the text provided inside the context boundar
     updateActiveSessionData(trimmedHistoryTree, currentSession.files);
   };
 
-  // Multiple File Processing Engine Hook (Completely Silent Chat Stream)
   const handleFileUpload = async (e: ChangeEvent<HTMLInputElement>, replaceFileId?: string): Promise<void> => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -254,8 +268,6 @@ A custom document is loaded. Review the text provided inside the context boundar
         }
 
         await recompileWorkspaceVectorContext(targetFilesMap);
-
-        // Silent interface refresh injection
         updateActiveSessionData(currentSession.messages, targetFilesMap);
       } catch (err) {
         setFileError("File array structure compile error.");
@@ -266,12 +278,9 @@ A custom document is loaded. Review the text provided inside the context boundar
     reader.readAsArrayBuffer(file);
   };
 
-  // Updated: Completely Silent File Removal Interface Hook
   const handleRemoveFile = async (fileId: string) => {
     const remainingFiles = currentSession.files.filter(f => f.id !== fileId);
     await recompileWorkspaceVectorContext(remainingFiles);
-
-    // Kept 100% silent by routing currentSession.messages directly
     updateActiveSessionData(currentSession.messages, remainingFiles);
   };
 
